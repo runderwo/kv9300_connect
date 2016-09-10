@@ -310,7 +310,8 @@ if ($main_url !~ /:\/\//) {
 }
 
 ###
-### Use creds and LoginSession cookie to find and fetch SSL VNC connection page with embedded APPLET tag (e.g. java-ssl.html) into temp directory
+### Use creds and LoginSession cookie to find and fetch SSL VNC connection page
+### with embedded APPLET tag (e.g. java-ssl.html) into temp directory.
 ###
 
 # Create a request
