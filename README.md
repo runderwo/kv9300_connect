@@ -9,7 +9,8 @@ access, or a native VNC client.)
 
 ## Example
 
-The embedded webserver HTTPS and VNC SSL ports must be open to the user.
+The embedded webserver HTTPS (443) and VNC SSL (15900) ports must be open to
+the user.
 
 ```
 ./kv9300_connect.pl --url URL --kvm-auth KVMUSER:KVMPASS [--http-auth HTTPUSER:HTTPPASS] [--insecure-http] [--insecure-vnc]
