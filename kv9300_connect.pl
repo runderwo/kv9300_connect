@@ -458,7 +458,8 @@ if (!$vnc_secure) {
   if ($insecure_vnc) {
     print "VNC anti-hijacking shields down!\n";
   } else {
-    die "VNC session could not be secured! Use --insecure-vnc if you don't care.";
+		die qq{VNC session could not be secured!
+Use --insecure-vnc if you don't think anyone would want to steal your password or data.};
   }
 }
 
