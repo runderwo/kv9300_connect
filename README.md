@@ -6,6 +6,8 @@ browser or Java browser plugin, or a SSH tunnel.
 
 ## Example
 
+The embedded webserver and VNC ports must be available to the user.
+
 The script takes up to three parameters, two of which are required:
 - The HTTPS URL of the KVM switch management login page
 - A username:password pair to log into the KVM switch
