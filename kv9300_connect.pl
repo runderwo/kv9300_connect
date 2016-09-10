@@ -325,20 +325,6 @@ print $applet_fh $applet_content;
 close $applet_fh;
 
 ###
-### Bah, using standard VNC viewer through stunnel doesn't work due to some evil auth differences.
-###
-#$root = HTML::TreeBuilder->new_from_content($res->content);
-#my $applet = $root->look_down("_tag" => "applet");
-#my $vnchost = $applet->look_down("_tag" => "param", name => "host");
-#my $vncport = $applet ->look_down("_tag" => "param", name => "port");
-#my $vncpass = $applet ->look_down("_tag" => "param", name => "encpassword");
-#print $vncpass->{value};
-#open my $vncpass_fh, "|-", 'echo -e "'.$vncpass->{value}."\n".$vncpass->{value}.'" | vncpasswd' or die "Couldn't set VNC password: $!";
-#close $vncpass_fh;
-##system("vncviewer -passwd ".$ENV{HOME}."/.vnc/passwd ".$vnchost->{value}.":".$vncport->{value});
-#system("vncviewer -passwd ".$ENV{HOME}."/.vnc/passwd localhost:5900");
-
-###
 ### Use creds and LoginSession cookie to fetch all ARCHIVEs from the CODEBASE of the APPLET into temp directory
 ###
 
