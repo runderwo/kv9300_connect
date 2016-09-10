@@ -423,8 +423,9 @@ close $fh;
 
 ###
 ### Verify VNC server SSL certificate matches HTTPS cert (which we hopefully
-### validated, unless the user lives dangerously).  Why?  Java VNC client
-### disables certificate validation...
+### validated, unless the user lives dangerously).  Why?  Because the Java VNC
+### client disables the otherwise default SSL certificate validation...
+### grumble.
 ###
 
 print "OpenSSL working:\n";
