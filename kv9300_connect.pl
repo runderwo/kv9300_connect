@@ -143,15 +143,18 @@ my $cert_der = File::Spec->catfile($dir, 'kvm.der');
 system("openssl x509 -outform der -in $cert -out $cert_der");
 die "Certificate conversion failed." unless $? == 0;
 
-# XXX configure location of java cert store
-my $sys_cacerts = "/etc/pki/java/cacerts";
+# Make a copy of default JVM cert store.
+use File::Which;
+use Cwd qw(realpath);
+($filename, $dirs, $suffix) = fileparse(realpath(which('keytool')));
+my $sys_cacerts = "$dirs/../lib/security/cacerts";
 use File::Copy;
 my $cacerts = File::Spec->catfile($dir, "cacerts");
-copy($sys_cacerts, $cacerts) or die "Couldn't copy $sys_cacerts: $!";
+print "Copying Java certificate store from ".realpath($sys_cacerts)."\n";
+copy(realpath($sys_cacerts), $cacerts) or die "Couldn't copy $sys_cacerts: $!";
 
 # Java keystore default password is "changeit".
-$ENV{'STOREPASS'} = 'changeit';
-system("echo y | keytool -storepass:env STOREPASS -import -v -alias kvm -keystore $cacerts -file $cert_der >/dev/null 2>/dev/null");
+system("echo y | keytool -storepass changeit -import -v -alias kvm -keystore $cacerts -file $cert_der >/dev/null 2>/dev/null");
 die "Certificate import to local keystore failed." unless $? == 0;
 
 ###
@@ -173,6 +176,9 @@ use LWP::UserAgent;
 my $ua = LWP::UserAgent->new;
 $ua->agent("MyApp/0.1 ");
 $ua->cookie_jar({});
+# XXX DANGER
+$ua->ssl_opts(SSL_verify_mode => 0);
+# XXX END DANGER
 
 # Create a request
 my $req = HTTP::Request->new(GET => $url);
@@ -182,7 +188,18 @@ my $req = HTTP::Request->new(GET => $url);
 my $res = $ua->request($req);
 
 # Check the outcome of the response
-die "Failed to fetch $url: ".$res->status_line."\n" unless ($res->is_success);
+if (!$res->is_success) {
+	print "Failed to fetch $url: ".$res->status_line."\n";
+	print qq{If this is a SSL error and you haven't loaded your own SSL cert
+onto the device, try uncommenting the line of code that sets SSL_verify_mode to
+zero, as the supplied SSL cert is signed by a private issuer and cannot be
+verified.
+
+Note: It will be impossible to detect an attack against your session if you do
+this.
+};
+	die;
+}
 
 use HTML::TreeBuilder;
 my $root = HTML::TreeBuilder->new_from_content($res->content);
@@ -331,6 +348,13 @@ my $codebase = $applet->{codebase};
 my $archives = $applet->{archive};
 die "Couldn't find applet code: $@" unless (defined($codebase) && defined($archives));
 
+# Fully qualify it if necessary.
+if ($codebase !~ /^:\/\//) {
+	$codebase = $url;
+	$codebase =~ s/\/[^\/]*$//;
+	$codebase .= $applet->{codebase};
+}
+
 my @archives = split /,/, $archives;
 foreach my $archive (@archives) {
   # Create a request
@@ -367,4 +391,4 @@ close $fh;
 ### Cross fingers and launch applet.
 ###
 
-system("appletviewer -J-Djavax.net.ssl.trustStore='$dir/cacerts' -J-Djavax.net.ssl.trustStorePassword='changeit' -J-Djava.security.policy=java.policy $dir/java-ssl.html");
+system("appletviewer -J-Djavax.net.ssl.trustStore='$dir/cacerts' -J-Djavax.net.ssl.trustStorePassword='changeit' -J-Djava.security.policy='$dir/java.policy' '$dir/java-ssl.html'");
