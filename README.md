@@ -1,8 +1,8 @@
 ## What is this?
 
-This is a program to launch a VNC session connected to the console of a Black
-Box KV9300 series KVM over IP switch, without using a web browser or Java
-browser plugin.
+This is a program to launch an authenticated VNC session connected to the
+console of a Black Box KV9300 series KVM over IP switch, without using a web
+browser or Java browser plugin, or a SSH tunnel.
 
 ## Example
 
@@ -20,10 +20,11 @@ personally :)
 
 ## Motivation
 
-Black Box sells a line of rebadged KVM over IP switches.  These KVM switches
-have a web interface which launches a Java VNC client that authenticates to the
-KVM switch and displays a custom dashboard at the bottom for controlling the
-KVM switch hardware remotely.
+Black Box sells a line of rebadged KVM over IP switches.  In addition to direct
+unauthenticated VNC access and SSH tunneling, these KVM switches have a web
+interface which launches a Java VNC client that authenticates to the KVM switch
+and displays a custom dashboard at the bottom for controlling the KVM switch
+hardware remotely.
 
 The manual for the first generation (KV9304A, KV9308A, KV9316A) can be found
 here:
