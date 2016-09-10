@@ -30,7 +30,8 @@ here:
 http://ftp.blackbox.com/manuals/K/KV9300%20Series.pdf
 
 Unfortunately, Java 1.8 security controls no longer allow non-signed applets to
-run by default, necessitating various workarounds in the JVM configuration.
+run by default, necessitating various manual workarounds in the JVM
+configuration to run the KVM switch client app.
 
 Further compounding the misery, Google has removed NPAPI plugin support from
 the popular Chrome browser in favor of the more modern PPAPI plugin interface,
@@ -41,6 +42,9 @@ Worse, as of January 2016, Oracle, the current owner of Java, announced that
 the Java browser plug-in interface would be phased out due to security
 concerns, eventually leaving the user with no way at all to remotely access
 this series of KVM switches.
+
+Instead, this program uses the Java `appletviewer` developer tool to launch the
+KVM client applet as a standalone Java application.
 
 ## Installation
 
