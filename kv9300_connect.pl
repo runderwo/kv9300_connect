@@ -230,7 +230,7 @@ certificate validation, as the supplied SSL cert is signed by a private issuer
 and cannot be verified.
 
 Note: It will be impossible to detect an attack against your session if you do
-this.
+this.  Login credentials can be stolen and full eavesdropping can take place.
 
 If you *have* loaded your own SSL cert, ensure that it advertises the proper
 SAN (Subject Alternative Name) corresponding to the precise, fully-qualified
