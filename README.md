@@ -9,15 +9,27 @@ access, or a native VNC client.)
 
 ## Example
 
-The embedded webserver and VNC ports must be available to the user.
-
-The script takes up to three parameters, two of which are required:
-- The HTTPS URL of the KVM switch management login page
-- A username:password pair to log into the KVM switch
-- Optionally, a username:password pair to pass HTTP Basic authentication.
+The embedded webserver HTTPS and VNC SSL ports must be open to the user.
 
 ```
-$ ./kv9300_connect.pl https://10.0.0.100/ 'kvmuser:kvmpass' 'httpuser:httppass'
+./kv9300_connect.pl --url URL --kvm-auth KVMUSER:KVMPASS [--http-auth HTTPUSER:HTTPPASS] [--insecure-http] [--insecure-vnc]
+```
+
+The script takes several parameters; the following two are required:
+- The HTTPS URL of the KVM switch management login page
+- A username:password pair to log into the KVM switch
+
+Optional parameters:
+- Optionally, a username:password pair to pass HTTP Basic authentication.
+- Flags to disable SSL certificate checks (and make your session vulnerable).
+
+```
+./kv9300_connect.pl --url URL --kvm-auth KVMUSER:KVMPASS [--http-auth HTTPUSER:HTTPPASS] [--insecure-http] [--insecure-vnc]
+```
+
+Example:
+```
+$ ./kv9300_connect.pl --url https://10.0.0.100/ --kvm-auth 'kvmuser:kvmpass' --http-auth 'httpuser:httppass'
 ```
 
 The script could be adapted for non-SSL use cases, but I don''t care about them
@@ -40,7 +52,7 @@ http://ftp.blackbox.com/manuals/K/KV9300%20Series.pdf
 
 Unfortunately, Java 1.8 security controls no longer allow non-signed applets to
 run by default, necessitating various manual workarounds in the JVM
-configuration to run the KVM switch client app.
+configuration to run the Java VNC client app.
 
 Further compounding the misery, Google has removed NPAPI plugin support from
 the popular Chrome browser in favor of the more modern PPAPI plugin interface,

@@ -25,23 +25,38 @@
 use strict;
 use warnings;
 
-my $url = shift;
+use Getopt::Long qw(GetOptions);
+
+my $url;
+my $kvm_auth;
+my $http_auth;
+my $insecure_https = 0;
+my $insecure_vnc = 0;
+
+GetOptions(
+  'url=s' => \$url,
+  'kvm-auth=s' => \$kvm_auth,
+  'http-auth=s' => \$http_auth,
+  'insecure-https' => \$insecure_https,
+  'insecure-vnc' => \$insecure_vnc,
+) or die qq{Usage:
+$0 --url URL --kvm-auth KVMUSER:KVMPASS [--http-auth HTTPUSER:HTTPPASS] [--insecure-http] [--insecure-vnc]
+};
+
 die "Need a URL of the KV93xx series switch web interface." if (!defined($url));
 
 my $kvm_user = undef;
 my $kvm_pass = undef;
-my $auth = shift;
-if (defined($auth)) {
-  ($kvm_user, $kvm_pass) = split /:/, $auth;
+if (defined($kvm_auth)) {
+  ($kvm_user, $kvm_pass) = split /:/, $kvm_auth;
   die "Bad KVM authentication, use format user:pass" unless (defined($kvm_user) and defined($kvm_pass));
 }
 die "Need to supply KVM user:pass." unless (defined($kvm_user) and defined($kvm_pass));
 
 my $http_user = undef;
 my $http_pass = undef;
-$auth = shift;
-if (defined($auth)) {
-  ($http_user, $http_pass) = split /:/, $auth;
+if (defined($http_auth)) {
+  ($http_user, $http_pass) = split /:/, $http_auth;
   die "Bad basic authentication, use format user:pass" unless (defined($http_user) and defined($http_pass));
 }
 
@@ -60,23 +75,25 @@ if ($host =~ /^(.*):(.*)$/) {
 }
 print "OpenSSL working:\n";
 my $ssl = `openssl s_client -connect $host:$port < /dev/null`;
-die "Failed to fetch server SSL cert, is openssl installed?" unless $? == 0;
+die "Failed to fetch HTTPS cert, is openssl installed?" unless $? == 0;
 
 use IPC::Open2;
 use IO::Handle;
 
 ###
-### Begin SSL certificate verification logic
+### Begin SSL certificate management process
 ###
 
+# TODO: Make this work with attached intermediate certs, if necessary.  Currently
+# this will only work with single certs.
 open2(my $readfh, my $writefh, 'openssl', 'x509', '-outform', 'pem') or die $!;
 $writefh->print($ssl) or die $!;
-my $newcert;
+my $httpscert;
 {
   local $/;
-  $newcert = <$readfh>;
+  $httpscert = <$readfh>;
 }
-die unless defined($newcert);
+die unless defined($httpscert);
 $readfh->close;
 $writefh->close or die "pipe execited with $?";
 
@@ -92,15 +109,18 @@ if (-f $cert) {
   open my $fh, "<$cert" or die "Couldn't open $cert: $!";
   local $/;
   my $oldcert = <$fh>;
-  if (defined($oldcert) && $oldcert eq $newcert) {
+  if (defined($oldcert) && $oldcert eq $httpscert) {
     $certdiff = 0;
   }
 }
 
+# TODO: Handle multiple cached certs for different devices, not only one for
+# this program in general.
+
 if ($certdiff) {
   # Human readable version of new cert.
   open2($readfh, $writefh, 'openssl', 'x509', '-noout', '-issuer', '-dates', '-fingerprint') or die $!;
-  $writefh->print($newcert) or die $!;
+  $writefh->print($httpscert) or die $!;
   my $newtext;
   {
     local $/;
@@ -131,18 +151,28 @@ Accept and store the new certificate? (y/N) };
   chomp $input;
   die "Aborted." unless (lc($input) eq 'y');
   open my $fh, ">$cert" or die "Couldn't write to $cert: $!";
-  print $fh $newcert;
+  print $fh $httpscert;
   close $fh;
 }
 
 ###
-### End SSL certificate verification logic
+### End SSL certificate management process
 ###
 
 my $cert_der = File::Spec->catfile($dir, 'kvm.der');
 system("openssl x509 -outform der -in $cert -out $cert_der");
 die "Certificate conversion failed." unless $? == 0;
 
+# XXX
+# Well, turns out customizing a Java cert store is useless, because the KV9316A
+# Java VNC client does not check the certificate anyway when connecting to the
+# SSL VNC port (15900).  Leaving it here anyway, since it doesn't hurt
+# anything, and other devices might do the right thing...
+#
+# Instead, we will ensure the certs presented by the HTTPS and VNC-SSL
+# servers match, since we presumably authenticated the HTTPS one ourselves.
+# XXX
+#
 # Make a copy of default JVM cert store.
 use File::Which;
 use Cwd qw(realpath);
@@ -150,7 +180,7 @@ use Cwd qw(realpath);
 my $sys_cacerts = "$dirs/../lib/security/cacerts";
 use File::Copy;
 my $cacerts = File::Spec->catfile($dir, "cacerts");
-print "Copying Java certificate store from ".realpath($sys_cacerts)."\n";
+print "Cloning system Java certificate store from ".realpath($sys_cacerts)."\n";
 copy(realpath($sys_cacerts), $cacerts) or die "Couldn't copy $sys_cacerts: $!";
 
 # Java keystore default password is "changeit".
@@ -173,32 +203,40 @@ use LWP::UserAgent;
   }
 }
 
+use IO::Socket::SSL qw( SSL_VERIFY_NONE );
+$IO::Socket::SSL::DEBUG = 1;
+use HTTP::Cookies;
+
 my $ua = LWP::UserAgent->new;
-$ua->agent("MyApp/0.1 ");
-$ua->cookie_jar({});
-# XXX DANGER
-$ua->ssl_opts(SSL_verify_mode => 0);
-# XXX END DANGER
+$ua->cookie_jar(HTTP::Cookies->new);
+if ($insecure_https) {
+  print "Dropping HTTPS anti-hijacking shields!\n";
+  $ua->ssl_opts(SSL_verify_mode => SSL_VERIFY_NONE);
+  $ua->ssl_opts(verify_hostname => 0);
+}
 
 # Create a request
 my $req = HTTP::Request->new(GET => $url);
 
 # Pass request to the user agent and get a response back
-# XXX: Will need to allow self-signed certs in newer LWP
 my $res = $ua->request($req);
 
 # Check the outcome of the response
 if (!$res->is_success) {
-	print "Failed to fetch $url: ".$res->status_line."\n";
-	print qq{If this is a SSL error and you haven't loaded your own SSL cert
-onto the device, try uncommenting the line of code that sets SSL_verify_mode to
-zero, as the supplied SSL cert is signed by a private issuer and cannot be
-verified.
+  print "Failed to fetch $url: ".$res->status_line."\n";
+  print qq{If this is a SSL error and you haven't loaded your own SSL cert
+onto the device, you'll have to use the --insecure-https option to disable SSL
+certificate validation, as the supplied SSL cert is signed by a private issuer
+and cannot be verified.
 
 Note: It will be impossible to detect an attack against your session if you do
 this.
+
+If you *have* loaded your own SSL cert, ensure that it advertises the proper
+SAN (Subject Alternative Name) corresponding to the precise, fully-qualified
+hostname in the URL you are using to connect.
 };
-	die;
+  die;
 }
 
 use HTML::TreeBuilder;
@@ -265,7 +303,7 @@ die "Didn't get KVM LoginSession cookie!" unless (defined($login_session));
 
 my $main_url = $res->header("Location");
 # Relative redirect?
-if ($main_url !~ /^:\/\//) {
+if ($main_url !~ /:\/\//) {
   $main_url = $action;
   $main_url =~ s/[^\/]*$//;
   $main_url .= $res->header("Location");
@@ -297,7 +335,7 @@ eval {
   $applet_url = $a_ele->{href};
 
   # Fully qualify it if necessary.
-  if ($applet_url !~ /^:\/\//) {
+  if ($applet_url !~ /:\/\//) {
     $applet_url = $main_url;
     $applet_url =~ s/[^\/]*$//;
     $applet_url .= $a_ele->{href};
@@ -325,17 +363,26 @@ print $applet_fh $applet_content;
 close $applet_fh;
 
 ###
-### Use creds and LoginSession cookie to fetch all ARCHIVEs from the CODEBASE of the APPLET into temp directory
+### Use creds and LoginSession cookie to fetch all ARCHIVEs from the CODEBASE
+### of the APPLET into temp directory.
 ###
 
 $root = HTML::TreeBuilder->new_from_content($res->content);
 my $applet = $root->look_down("_tag" => "applet");
+my $vnchost = undef;
+my $vncport = undef;
+eval {
+  $vnchost = $applet->look_down("_tag" => "param", name => "host")->{value};
+  $vncport = $applet->look_down("_tag" => "param", name => "port")->{value};
+};
+die $@ if $@;
+
 my $codebase = $applet->{codebase};
 my $archives = $applet->{archive};
 die "Couldn't find applet code: $@" unless (defined($codebase) && defined($archives));
 
 # Fully qualify it if necessary.
-if ($codebase !~ /^:\/\//) {
+if ($codebase !~ /:\/\//) {
 	$codebase = $url;
 	$codebase =~ s/\/[^\/]*$//;
 	$codebase .= $applet->{codebase};
@@ -350,7 +397,7 @@ foreach my $archive (@archives) {
   $res = $ua->request($req);
 
   # Check the outcome of the response
-  die "Couldn't get applet page: ".$res->status_line unless($res->is_success);
+  die "Couldn't get archive $codebase/$archive: ".$res->status_line unless($res->is_success);
 
   my $archive_fname = File::Spec->catfile($dir, $archive);
   open my $archive_fh, ">$archive_fname" or die "Couldn't open $archive_fname: $!";
@@ -374,7 +421,46 @@ grant
 close $fh;
 
 ###
-### Cross fingers and launch applet.
+### Verify VNC server SSL certificate matches HTTPS cert (which we hopefully
+### validated, unless the user lives dangerously).  Why?  Java VNC client
+### disables certificate validation...
 ###
 
+print "OpenSSL working:\n";
+$ssl = `openssl s_client -connect $vnchost:$vncport < /dev/null`;
+die "Failed to fetch VNC server SSL cert." unless $? == 0;
+
+open2($readfh, $writefh, 'openssl', 'x509', '-outform', 'pem') or die $!;
+$writefh->print($ssl) or die $!;
+my $vnccert;
+{
+  local $/;
+  $vnccert = <$readfh>;
+}
+die unless defined($vnccert);
+$readfh->close;
+$writefh->close or die "pipe execited with $?";
+
+my $vnc_secure = 1;
+if ($httpscert ne $vnccert) {
+  print "VNC SSL certificate doesn't match HTTPS certificate!\n";
+  $vnc_secure = 0;
+}
+
+if ($insecure_https) {
+  print "VNC anti-hijacking shields unavailable without secured HTTPS session!\n";
+  $vnc_secure = 0;
+}
+
+if (!$vnc_secure) {
+  if ($insecure_vnc) {
+    print "VNC anti-hijacking shields down!\n";
+  } else {
+    die "VNC session could not be secured! Use --insecure-vnc if you don't care.";
+  }
+}
+
+###
+### Cross fingers and launch applet.
+###
 system("appletviewer -J-Djavax.net.ssl.trustStore='$dir/cacerts' -J-Djavax.net.ssl.trustStorePassword='changeit' -J-Djava.security.policy='$dir/java.policy' '$dir/java-ssl.html'");
