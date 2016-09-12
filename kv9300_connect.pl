@@ -101,8 +101,12 @@ $writefh->close or die "pipe execited with $?";
 use File::Basename;
 my ($filename, $dirs, $suffix) = fileparse($0);
 use File::HomeDir;
-my $cert = File::Spec->catfile(File::HomeDir->my_home, ".$filename.pem");
+my $cert = File::Spec->catfile(File::HomeDir->my_home, ".$filename");
+use File::Path qw(make_path);
+make_path($cert);
+die "Couldn't make directory $cert" unless (-d $cert);
 
+$cert .= ".$host.pem";
 my $certdiff = 1;
 
 if (-f $cert) {
@@ -113,9 +117,6 @@ if (-f $cert) {
     $certdiff = 0;
   }
 }
-
-# TODO: Handle multiple cached certs for different devices, not only one for
-# this program in general.
 
 if ($certdiff) {
   # Human readable version of new cert.
@@ -178,6 +179,11 @@ use File::Which;
 use Cwd qw(realpath);
 ($filename, $dirs, $suffix) = fileparse(realpath(which('keytool')));
 my $sys_cacerts = "$dirs/../lib/security/cacerts";
+if (! -r $sys_cacerts) {
+  # Assume we were using keytool from a JDK; find the corresponding JRE.
+  $sys_cacerts = "$dirs/../jre/lib/security/cacerts";
+  die "Couldn't locate JVM cert store at $sys_cacerts" unless (-r $sys_cacerts);
+}
 use File::Copy;
 my $cacerts = File::Spec->catfile($dir, "cacerts");
 print "Cloning system Java certificate store from ".realpath($sys_cacerts)."\n";
@@ -203,16 +209,24 @@ use LWP::UserAgent;
   }
 }
 
-use IO::Socket::SSL qw( SSL_VERIFY_NONE );
+use IO::Socket::SSL qw( SSL_VERIFY_NONE SSL_VERIFY_PEER );
 $IO::Socket::SSL::DEBUG = 1;
 use HTTP::Cookies;
 
 my $ua = LWP::UserAgent->new;
 $ua->cookie_jar(HTTP::Cookies->new);
-if ($insecure_https) {
-  print "Dropping HTTPS anti-hijacking shields!\n";
-  $ua->ssl_opts(SSL_verify_mode => SSL_VERIFY_NONE);
-  $ua->ssl_opts(verify_hostname => 0);
+
+if (LWP::Version lt "6.0") {
+  print "Warning: HTTPS session will not be authenticated with ancient Perl LWP::UserAgent.\n";
+} else {
+  if ($insecure_https) {
+    print "Dropping HTTPS anti-hijacking shields!\n";
+    $ua->ssl_opts(SSL_verify_mode => SSL_VERIFY_NONE);
+    $ua->ssl_opts(verify_hostname => 0);
+  } else {
+    $ua->ssl_opts(SSL_verify_mode => SSL_VERIFY_PEER);
+    $ua->ssl_opts(verify_hostname => 1);
+  }
 }
 
 # Create a request
@@ -466,4 +480,5 @@ Use --insecure-vnc if you don't think anyone would want to steal your password o
 ###
 ### Cross fingers and launch applet.
 ###
+
 system("appletviewer -J-Djavax.net.ssl.trustStore='$dir/cacerts' -J-Djavax.net.ssl.trustStorePassword='changeit' -J-Djava.security.policy='$dir/java.policy' '$dir/java-ssl.html'");
