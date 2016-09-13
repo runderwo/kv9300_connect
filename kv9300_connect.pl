@@ -216,8 +216,8 @@ use HTTP::Cookies;
 my $ua = LWP::UserAgent->new;
 $ua->cookie_jar(HTTP::Cookies->new);
 
-if (LWP::Version lt "6.0") {
-  print "Warning: HTTPS session will not be authenticated with ancient Perl LWP::UserAgent.\n";
+if (LWP::Version lt "6.0" && !$insecure_https) {
+  die "Not allowing use of ancient (< 6.0) Perl LWP::UserAgent without --insecure-https.\n";
 } else {
   if ($insecure_https) {
     print "Dropping HTTPS anti-hijacking shields!\n";
