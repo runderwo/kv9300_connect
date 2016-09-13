@@ -216,17 +216,20 @@ use HTTP::Cookies;
 my $ua = LWP::UserAgent->new;
 $ua->cookie_jar(HTTP::Cookies->new);
 
-if (LWP::Version lt "6.0" && !$insecure_https) {
-  die "Not allowing use of ancient (< 6.0) Perl LWP::UserAgent without --insecure-https.\n";
+if (LWP::Version lt "6.0") {
+  die "Not allowing use of ancient (< 6.0) Perl LWP::UserAgent without --insecure-https.\n" unless ($insecure_https);
 } else {
   if ($insecure_https) {
-    print "Dropping HTTPS anti-hijacking shields!\n";
     $ua->ssl_opts(SSL_verify_mode => SSL_VERIFY_NONE);
     $ua->ssl_opts(verify_hostname => 0);
   } else {
     $ua->ssl_opts(SSL_verify_mode => SSL_VERIFY_PEER);
     $ua->ssl_opts(verify_hostname => 1);
   }
+}
+
+if ($insecure_https) {
+  print "HTTPS anti-hijacking shields dropped!\n";
 }
 
 # Create a request
